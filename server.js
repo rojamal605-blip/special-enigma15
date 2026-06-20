@@ -88,7 +88,7 @@ app.post('/v1/chat/completions', async (req, res) => {
         } else {
           return res.status(400).json({
             error: {
-              message: `Model '${model}' is not supported and could not be resolved.`,
+              message: `Model '${model}' plz put model no detect.`,
               type: 'invalid_request_error',
               code: 400
             }
