@@ -14,10 +14,28 @@ app.use(express.json({ limit: '50mb' }));
 const NIM_API_BASE = process.env.NIM_API_BASE || 'https://integrate.api.nvidia.com/v1';
 const NIM_API_KEY = process.env.NIM_API_KEY;
 
-// 🔥 REASONING DISPLAY TOGGLE - Shows/hides reasoning in output
+const NIM_API_KEYS = [
+  process.env.NIM_API_KEY,
+  process.env.NIM_API_KEY_2,
+  process.env.NIM_API_KEY_3,
+  process.env.NIM_API_KEY_4,
+].filter(Boolean); // removes any that aren't set
+
+let currentKeyIndex = 0;
+
+function getNextKey() {
+  currentKeyIndex = (currentKeyIndex + 1) % NIM_API_KEYS.length;
+  return NIM_API_KEYS[currentKeyIndex];
+}
+
+function getCurrentKey() {
+  return NIM_API_KEYS[currentKeyIndex];
+}
+
+// REASONING DISPLAY TOGGLE - Shows/hides reasoning in output
 const SHOW_REASONING = false; // Set to true to show reasoning with <think> tags
 
-// 🔥 THINKING MODE TOGGLE - Enables thinking for specific models that support it
+//  THINKING MODE TOGGLE - Enables thinking for specific models that support it
 const ENABLE_THINKING_MODE = false; // Set to true to enable chat_template_kwargs thinking parameter
 
 // Model mapping (adjust based on available NIM models)
@@ -107,14 +125,30 @@ app.post('/v1/chat/completions', async (req, res) => {
       stream: stream || false
     };
     
-    // Make request to NVIDIA NIM API
-    const response = await axios.post(`${NIM_API_BASE}/chat/completions`, nimRequest, {
-      headers: {
-        'Authorization': `Bearer ${NIM_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      responseType: stream ? 'stream' : 'json'
-    });
+    // Make request to NVIDIA NIM API with key rotation on Undetected error
+    let response;
+    let attempts = 0;
+    while (attempts < NIM_API_KEYS.length) {
+      try {
+        response = await axios.post(`${NIM_API_BASE}/chat/completions`, nimRequest, {
+          headers: {
+            'Authorization': `Bearer ${getCurrentKey()}`,
+            'Content-Type': 'application/json'
+          },
+          responseType: stream ? 'stream' : 'json'
+        });
+        break; // success, exit loop
+      } catch (err) {
+        const msg = err.response?.data?.error?.message || '';
+        if (msg.includes('Undetected') && attempts < NIM_API_KEYS.length - 1) {
+          console.log(`Key ${currentKeyIndex + 1} got Undetected error, rotating to next key...`);
+          getNextKey();
+          attempts++;
+        } else {
+          throw err; // not an Undetected error, or all keys exhausted
+        }
+      }
+    }
     
     if (stream) {
       // Handle streaming response with reasoning
